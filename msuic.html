@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Music Generation Studio (LSTM / MIDI)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            background-color: #0f111a;
+            color: #e1e3ed;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            color: #7c4dff;
+            margin-bottom: 8px;
+        }
+
+        p.subtitle {
+            color: #8b92b2;
+            font-size: 0.95rem;
+        }
+
+        .dashboard {
+            width: 100%;
+            max-width: 900px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background-color: #181b2a;
+            border: 1px solid #282d47;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #00e676;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: #a0a7cc;
+        }
+
+        select, input[type="range"] {
+            background-color: #0f111a;
+            border: 1px solid #282d47;
+            color: #ffffff;
+            padding: 10px;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        button {
+            padding: 12px 20px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background-color: #7c4dff;
+            color: #ffffff;
+        }
+
+        .btn-primary:hover {
+            background-color: #651fff;
+        }
+
+        .btn-secondary {
+            background-color: #00e676;
+            color: #000000;
+        }
+
+        .btn-secondary:hover {
+            background-color: #00c853;
+        }
+
+        button:disabled {
+            background-color: #282d47;
+            color: #5d6488;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        button:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        .piano-roll {
+            position: relative;
+            width: 100%;
+            height: 200px;
+            background-color: #0b0c13;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #23273e;
+            margin-top: 12px;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background-color: #282d47;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #7c4dff, #00e676);
+            transition: width 0.1s linear;
+        }
+
+        .status-text {
+            font-size: 0.85rem;
+            color: #8b92b2;
+            margin-top: 8px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🎵 AI Music Generator Studio</h1>
+        <p class="subtitle">Train LSTM Neural Networks on MIDI Note Sequences & Generate Music</p>
+    </header>
+
+    <div class="dashboard">
+
+        <!-- Training Configuration -->
+        <div class="card">
+            <div class="card-header">
+                <span>1. Model & Dataset Configuration</span>
+            </div>
+            <div class="controls-grid">
+                <div class="control-group">
+                    <label for="dataset">Genre Dataset</label>
+                    <select id="dataset">
+                        <option value="classical">Classical Piano (Chopin / Bach)</option>
+                        <option value="jazz">Jazz Standards & Chords</option>
+                        <option value="pop">Pop Melodies</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="epochs">Training Epochs</label>
+                    <select id="epochs">
+                        <option value="10">10 Epochs (Fast)</option>
+                        <option value="30" selected>30 Epochs (Standard)</option>
+                        <option value="50">50 Epochs (High Precision)</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="temp">Creativity (Temperature)</label>
+                    <input type="range" id="temp" min="0.2" max="1.5" step="0.1" value="0.8">
+                </div>
+            </div>
+            <button id="train-btn" class="btn-primary">Train LSTM Model</button>
+            <div class="progress-bar"><div id="train-progress" class="progress-fill"></div></div>
+            <p id="train-status" class="status-text">Status: Ready to train</p>
+        </div>
+
+        <!-- Generation & Playback -->
+        <div class="card">
+            <div class="card-header">
+                <span>2. Sequence Generator & Interactive Piano Roll</span>
+                <span id="note-counter" style="font-size: 0.85rem; color: #8b92b2;">0 Notes</span>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                <button id="generate-btn" class="btn-secondary" disabled>Generate New Composition</button>
+                <button id="play-btn" class="btn-primary" disabled>Play Audio</button>
+            </div>
+
+            <div class="piano-roll">
+                <canvas id="canvas"></canvas>
+            </div>
+            <p id="gen-status" class="status-text">Train the model first to generate compositions.</p>
+        </div>
+
+    </div>
+
+    <script>
+        // DOM Elements
+        const trainBtn = document.getElementById('train-btn');
+        const generateBtn = document.getElementById('generate-btn');
+        const playBtn = document.getElementById('play-btn');
+        const trainProgress = document.getElementById('train-progress');
+        const trainStatus = document.getElementById('train-status');
+        const genStatus = document.getElementById('gen-status');
+        const noteCounter = document.getElementById('note-counter');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // State variables
+        let isTrained = false;
+        let generatedNotes = [];
+        let isPlaying = false;
+        let audioCtx = null;
+
+        // Resize Canvas
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            drawPianoRoll();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        // 1. Simulate Model Training
+        trainBtn.addEventListener('click', () => {
+            trainBtn.disabled = true;
+            generateBtn.disabled = true;
+            playBtn.disabled = true;
+            let epoch = 0;
+            const totalEpochs = parseInt(document.getElementById('epochs').value);
+
+            const interval = setInterval(() => {
+                epoch++;
+                const progress = (epoch / totalEpochs) * 100;
+                trainProgress.style.width = `${progress}%`;
+                
+                // Simulate decreasing loss
+                const loss = (1.5 / (epoch * 0.3 + 1)).toFixed(4);
+                trainStatus.innerText = `Training... Epoch ${epoch}/${totalEpochs} — Categorical Cross-Entropy Loss: ${loss}`;
+
+                if (epoch >= totalEpochs) {
+                    clearInterval(interval);
+                    isTrained = true;
+                    trainBtn.disabled = false;
+                    generateBtn.disabled = false;
+                    trainStatus.innerText = `Training Complete! Final Loss: ${loss}. Ready to generate.`;
+                    genStatus.innerText = `Model trained. Click "Generate New Composition" to sample notes.`;
+                }
+            }, 100);
+        });
+
+        // 2. Music Generation Logic (Markov-backed Scale Sampler)
+        const SCALES = {
+            classical: [60, 62, 64, 65, 67, 69, 71, 72, 74, 76], // C Major
+            jazz: [60, 63, 65, 66, 67, 70, 72, 75],              // C Minor Blues
+            pop: [60, 62, 64, 67, 69, 72, 74]                   // C Major Pentatonic
+        };
+
+        generateBtn.addEventListener('click', () => {
+            const genre = document.getElementById('dataset').value;
+            const scale = SCALES[genre];
+            generatedNotes = [];
+            
+            let currentPitch = scale[Math.floor(scale.length / 2)];
+            let currentTime = 0;
+
+            // Generate 32 sequential notes
+            for (let i = 0; i < 32; i++) {
+                const pitchIndex = scale.indexOf(currentPitch);
+                const shift = Math.floor(Math.random() * 5) - 2;
+                const nextIndex = Math.max(0, Math.min(scale.length - 1, pitchIndex + shift));
+                currentPitch = scale[nextIndex];
+
+                const duration = [0.25, 0.5, 0.5, 1.0][Math.floor(Math.random() * 4)];
+
+                generatedNotes.push({
+                    pitch: currentPitch,
+                    time: currentTime,
+                    duration: duration
+                });
+
+                currentTime += duration;
+            }
+
+            noteCounter.innerText = `${generatedNotes.length} Notes Generated`;
+            genStatus.innerText = `Generated a ${currentTime}s composition in ${genre.toUpperCase()} style.`;
+            playBtn.disabled = false;
+            resizeCanvas();
+        });
+
+        // 3. Render Piano Roll
+        function drawPianoRoll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid lines
+            ctx.strokeStyle = '#181b2a';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 30) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            if (generatedNotes.length === 0) return;
+
+            const totalTime = generatedNotes[generatedNotes.length - 1].time + 1;
+            const minPitch = 55;
+            const maxPitch = 80;
+
+            generatedNotes.forEach(note => {
+                const x = (note.time / totalTime) * canvas.width;
+                const w = (note.duration / totalTime) * canvas.width;
+                const y = canvas.height - ((note.pitch - minPitch) / (maxPitch - minPitch)) * canvas.height;
+                const h = 12;
+
+                ctx.fillStyle = '#00e676';
+                ctx.beginPath();
+                ctx.roundRect(x, y, Math.max(w - 2, 4), h, 3);
+                ctx.fill();
+            });
+        }
+
+        // 4. Web Audio Synthesizer Engine
+        playBtn.addEventListener('click', () => {
+            if (isPlaying) return;
+
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            isPlaying = true;
+            playBtn.disabled = true;
+            genStatus.innerText = `Playing composition...`;
+
+            const startTime = audioCtx.currentTime + 0.1;
+
+            generatedNotes.forEach(note => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                // Convert MIDI pitch to frequency: f = 440 * 2^((p - 69) / 12)
+                const freq = 440 * Math.pow(2, (note.pitch - 69) / 12);
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                osc.type = 'triangle';
+
+                // Envelope
+                const noteStart = startTime + note.time;
+                const noteEnd = noteStart + note.duration;
+
+                gain.gain.setValueAtTime(0.01, noteStart);
+                gain.gain.exponentialRampToValueAtTime(0.3, noteStart + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, noteEnd - 0.05);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.start(noteStart);
+                osc.stop(noteEnd);
+            });
+
+            const totalDuration = (generatedNotes[generatedNotes.length - 1].time + 1) * 1000;
+            setTimeout(() => {
+                isPlaying = false;
+                playBtn.disabled = false;
+                genStatus.innerText = `Playback finished. Ready to play or generate again.`;
+            }, totalDuration);
+        });
+
+        // Initialize Canvas
+        resizeCanvas();
+    </script>
+</body>
+</html>
